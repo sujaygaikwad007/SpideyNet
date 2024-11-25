@@ -1,40 +1,53 @@
 import Foundation
 
-public class NetworkManager {
-    
-    public static let shared = NetworkManager()
-    
+class NetworkManager {
+    static let shared = NetworkManager()
     private init() {}
     
-    public func request<T: Decodable>(
-        url: URL,
-        method: HTTPMethod,
-        body: Data? = nil,
-        completion: @escaping (Result<T, NetworkError>) -> Void
-    ) {
+    func request<T:Codable>(
+        urlString : String,
+        method: HTTPMethod = .get,
+        header:[String:String]? = nil,
+        body:Data?=nil,
+        responseType:T.Type,
+        completion: @escaping(Result<T,NetworkError>) -> Void
+        
+    ){
+        guard let url = URL(string: urlString) else{
+            completion(.failure(.invalidURL))
+            return
+        }
+        
         var request = URLRequest(url: url)
         request.httpMethod = method.rawValue
+        request.allHTTPHeaderFields = header
         request.httpBody = body
         
-        let task = URLSession.shared.dataTask(with: request) { data, response, error in
-            if let _ = error {
-                completion(.failure(.requestFailed))
+        URLSession.shared.dataTask(with: request){ data,response,error in
+            
+            if let error = error {
+                completion(.failure(.custom(error.localizedDescription)))
                 return
             }
             
-            guard let data = data, let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode == 200 else {
+            guard let httpResponse = response as? HTTPURLResponse,(200...299).contains(httpResponse.statusCode) else {
                 completion(.failure(.invalidResponse))
                 return
             }
             
-            do {
-                let decodedObject = try JSONDecoder().decode(T.self, from: data)
-                completion(.success(decodedObject))
-            } catch {
+            guard let data = data else{
+                completion(.failure(.noData))
+                return
+            }
+            
+            do{
+                let decodeData = try JSONDecoder().decode(responseType, from: data)
+                completion(.success(decodeData))
+            } catch{
                 completion(.failure(.decodingError))
             }
-        }
-        
-        task.resume()
+            
+        }.resume()
     }
+    
 }
